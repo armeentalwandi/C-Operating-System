@@ -9,6 +9,10 @@
 #include <thread.h>
 #include <addrspace.h>
 #include <copyinout.h>
+#include "opt-A2.h"
+#include "clock.h"
+#include <mips/trapframe.h>
+
 
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
@@ -55,7 +59,12 @@ sys_getpid(pid_t *retval)
 {
   /* for now, this is just a stub that always returns a PID of 1 */
   /* you need to fix this to make it work properly */
-  *retval = 1;
+  #if OPT_A2
+    KASSERT(curproc != NULL);
+    *retval = curproc->pid;
+  #else 
+    *retval = 1;
+  #endif
   return(0);
 }
 
@@ -91,4 +100,60 @@ sys_waitpid(pid_t pid,
   *retval = pid;
   return(0);
 }
+
+
+
+int sys_fork(pid_t* retval, struct trapframe *tf)
+{
+  // create a process structure for child process
+  struct proc *child = proc_create_runprogram(curproc->p_name);
+  KASSERT(child != NULL);
+  KASSERT(child->pid > 0);
+  
+  
+  child->exit_code = -1;
+  child->exited = false;
+
+  array_add(curproc->proc_children, child, NULL);
+
+  // create and copy the address space
+ 
+  // struct addrspace *cur_address = curproc_getas();
+	// struct addrspace *new_address;
+	// int err = as_copy(cur_address, &new_address);
+  int err = as_copy(curproc_getas(), &(child->p_addrspace));
+
+  if (err != 0) {
+    DEBUG(DB_SYSCALL,"sys_fork | ERROR: Failed to copy address space");
+    proc_destroy(child);
+    return EADDRNOTAVAIL;
+  }
+  // child->p_addrspace = new_address;
+  child->parent = curproc; 
+
+// new trapframe
+ struct trapframe *child_tf = kmalloc(sizeof(struct trapframe));
+ *child_tf = *tf;
+ 
+ if(child_tf == NULL)
+	{
+		proc_destroy(child);
+		return ENOMEM;
+	}
+ 
+ int new_fork = thread_fork(child->p_name, child, (void*)&enter_forked_process, (void*)child_tf, (unsigned long)0);
+ if (new_fork != 0) {
+  kfree(child_tf);
+  proc_destroy(child);
+  return new_fork;
+ }
+
+  *retval = child->pid;
+  clocksleep(1);
+  return(0);
+
+}
+
+
+
 

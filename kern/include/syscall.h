@@ -26,7 +26,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
+#include <opt-A2.h>
 #ifndef _SYSCALL_H_
 #define _SYSCALL_H_
 
@@ -44,7 +44,8 @@ void syscall(struct trapframe *tf);
  */
 
 /* Helper for fork(). You write this. */
-void enter_forked_process(struct trapframe *tf);
+
+void enter_forked_process(void* tf, unsigned long v);
 
 /* Enter user mode. Does not return. */
 void enter_new_process(int argc, userptr_t argv, vaddr_t stackptr,
@@ -63,7 +64,9 @@ int sys_write(int fdesc,userptr_t ubuf,unsigned int nbytes,int *retval);
 void sys__exit(int exitcode);
 int sys_getpid(pid_t *retval);
 int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval);
+int sys_fork(pid_t* retval, struct trapframe *tf);
 
 #endif // UW
+
 
 #endif /* _SYSCALL_H_ */

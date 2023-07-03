@@ -50,6 +50,7 @@
 #include <vfs.h>
 #include <synch.h>
 #include <kern/fcntl.h>  
+#include "opt-A2.h"
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -69,7 +70,11 @@ static struct semaphore *proc_count_mutex;
 struct semaphore *no_proc_sem;   
 #endif  // UW
 
+#if OPT_A2
+static struct semaphore *pid_count_mutex;
+static volatile unsigned int pid_count;
 
+#endif
 
 /*
  * Create a proc structure.
@@ -102,6 +107,14 @@ proc_create(const char *name)
 #ifdef UW
 	proc->console = NULL;
 #endif // UW
+
+#if OPT_A2
+	proc->proc_children = array_create();
+	array_init(proc->proc_children);
+	proc->parent = NULL;
+	proc->pid = 0;
+
+#endif
 
 	return proc;
 }
@@ -208,6 +221,16 @@ proc_bootstrap(void)
     panic("could not create no_proc_sem semaphore\n");
   }
 #endif // UW 
+
+#if OPT_A2
+	pid_count = 0;
+	pid_count_mutex = sem_create("pid_count_mutex",1);
+  if (pid_count_mutex == NULL) {
+    panic("could not create pid_count_mutex semaphore\n");
+  }
+
+
+#endif
 }
 
 /*
@@ -226,6 +249,13 @@ proc_create_runprogram(const char *name)
 	if (proc == NULL) {
 		return NULL;
 	}
+
+	#if OPT_A2
+		P(pid_count_mutex);
+		pid_count++;
+		proc->pid = pid_count;
+		V(pid_count_mutex);
+	#endif
 
 #ifdef UW
 	/* open the console - this should always succeed */

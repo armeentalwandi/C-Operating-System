@@ -27,6 +27,7 @@
  * SUCH DAMAGE.
  */
 
+
 #include <types.h>
 #include <kern/errno.h>
 #include <kern/syscall.h>
@@ -35,6 +36,7 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
+#include "opt-A2.h"
 
 
 /*
@@ -131,7 +133,12 @@ syscall(struct trapframe *tf)
 	  break;
 #endif // UW
 
-	    /* Add stuff here */
+#if OPT_A2
+	case SYS_fork:
+			err = sys_fork((pid_t *)&retval, tf);
+			break;
+#endif
+
  
 	default:
 	  kprintf("Unknown syscall %d\n", callno);
@@ -176,8 +183,16 @@ syscall(struct trapframe *tf)
  *
  * Thus, you can trash it and do things another way if you prefer.
  */
-void
-enter_forked_process(struct trapframe *tf)
-{
-	(void)tf;
+#if OPT_A2
+void enter_forked_process(void *tf, unsigned long v) {
+    (void)v;
+        struct trapframe *temp_tf = tf;
+        struct trapframe new_tf = *temp_tf;
+        new_tf.tf_v0 = 0;
+        new_tf.tf_a3 = 0;
+        new_tf.tf_epc += 4;
+        kfree(temp_tf);
+        mips_usermode(&new_tf);
 }
+#endif
+

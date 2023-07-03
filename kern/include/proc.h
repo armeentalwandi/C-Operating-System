@@ -38,6 +38,8 @@
 
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
+#include <opt-A2.h>
+#include<array.h>
 
 struct addrspace;
 struct vnode;
@@ -48,7 +50,25 @@ struct semaphore;
 /*
  * Process structure.
  */
+
 struct proc {
+	#if OPT_A2
+		pid_t pid;
+
+		struct array* proc_children;
+		struct proc *parent;
+
+		struct lock *child_lock;
+		struct cv *proc_cv;
+
+		int exit_code;
+		bool exited;
+
+
+	#endif
+
+
+
 	char *p_name;			/* Name of this process */
 	struct spinlock p_lock;		/* Lock for this structure */
 	struct threadarray p_threads;	/* Threads in this process */
