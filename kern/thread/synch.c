@@ -182,6 +182,7 @@ void lock_destroy(struct lock *lock) {
 
 bool lock_do_i_hold(struct lock *lock) {
     // Write this
+    KASSERT(lock != NULL);
     if (lock->owner == curthread) {
         return true;
     }

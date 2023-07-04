@@ -112,8 +112,11 @@ proc_create(const char *name)
 	proc->proc_children = array_create();
 	array_init(proc->proc_children);
 	proc->parent = NULL;
+	proc->exit_code = -1;
+	proc->exited = 0; // 0 is false, 1 is true
 	proc->pid = 0;
-
+	proc->child_lock = lock_create(name);
+	proc->proc_cv = cv_create(name);
 #endif
 
 	return proc;
@@ -125,23 +128,9 @@ proc_create(const char *name)
 void
 proc_destroy(struct proc *proc)
 {
-	/*
-         * note: some parts of the process structure, such as the address space,
-         *  are destroyed in sys_exit, before we get here
-         *
-         * note: depending on where this function is called from, curproc may not
-         * be defined because the calling thread may have already detached itself
-         * from the process.
-	 */
 
 	KASSERT(proc != NULL);
 	KASSERT(proc != kproc);
-
-	/*
-	 * We don't take p_lock in here because we must have the only
-	 * reference to this structure. (Otherwise it would be
-	 * incorrect to destroy it.)
-	 */
 
 	/* VFS fields */
 	if (proc->p_cwd) {
@@ -149,19 +138,9 @@ proc_destroy(struct proc *proc)
 		proc->p_cwd = NULL;
 	}
 
-
 #ifndef UW  // in the UW version, space destruction occurs in sys_exit, not here
 	if (proc->p_addrspace) {
-		/*
-		 * In case p is the currently running process (which
-		 * it might be in some circumstances, or if this code
-		 * gets moved into exit as suggested above), clear
-		 * p_addrspace before calling as_destroy. Otherwise if
-		 * as_destroy sleeps (which is quite possible) when we
-		 * come back we'll be calling as_activate on a
-		 * half-destroyed address space. This tends to be
-		 * messily fatal.
-		 */
+	
 		struct addrspace *as;
 
 		as_deactivate();
@@ -169,6 +148,19 @@ proc_destroy(struct proc *proc)
 		as_destroy(as);
 	}
 #endif // UW
+
+
+#if OPT_A2
+		int children = array_num(proc->proc_children);
+		for(int i = children - 1; i >= 0; i--) {
+			struct proc *p = (struct proc *)array_get(proc->proc_children, i);
+			p->parent = NULL;
+
+			array_remove(proc->proc_children, i);
+		}
+		array_destroy(proc->proc_children);
+
+#endif
 
 #ifdef UW
 	if (proc->console) {

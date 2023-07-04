@@ -62,7 +62,7 @@ struct proc {
 		struct cv *proc_cv;
 
 		int exit_code;
-		bool exited;
+		int exited;
 
 
 	#endif
