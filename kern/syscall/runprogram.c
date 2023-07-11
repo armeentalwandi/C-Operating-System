@@ -44,7 +44,8 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
-
+#include <copyinout.h>
+#include <limits.h>
 /*
  * Load program "progname" and start running it in usermode.
  * Does not return except on error.
@@ -52,12 +53,15 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname)
+runprogram(char *progname, int argc, char **args)
 {
 	struct addrspace *as;
 	struct vnode *v;
-	vaddr_t entrypoint, stackptr;
+	vaddr_t entrypoint, stackptr; 
 	int result;
+
+	// we have the number of arguments in argc
+	
 
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
@@ -76,7 +80,8 @@ runprogram(char *progname)
 	}
 
 	/* Switch to it and activate it. */
-	curproc_setas(as);
+	//curproc_setas(as);
+	struct addrspace *old_as = curproc_setas(as);
 	as_activate();
 
 	/* Load the executable. */
@@ -97,10 +102,37 @@ runprogram(char *progname)
 		return result;
 	}
 
+
+/// starts here
+	vaddr_t *addr_ptr = kmalloc((argc+1)*sizeof(vaddr_t));
+
+if (addr_ptr == NULL) {
+	return ENOMEM;
+}
+
+// copy the arguments --  copy out the string, decrement stack pointer, use copyoutstr
+// put userspace address of string in addr_ptr for each of the strings
+for (int i = argc-1; i >= 0; i--) {
+	stackptr -= ROUNDUP(strlen(args[i]) + 1, 4);
+	result = copyoutstr(args[i], (userptr_t)stackptr, ROUNDUP(strlen(args[i]) + 1, 4), NULL);    
+
+	if (result == 0) {
+		addr_ptr[i] = stackptr; 
+	}
+}
+addr_ptr[argc] = (vaddr_t)NULL;
+// pointers to chars
+	for (int i = argc; i >= 0; i--) {
+		stackptr -= sizeof(vaddr_t);
+		int err = copyout(&addr_ptr[i], (userptr_t) stackptr, sizeof(vaddr_t));
+		KASSERT(err == 0);
+	}
+ 
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
-			  stackptr, entrypoint);
-	
+	enter_new_process(argc /*argc*/, (userptr_t)stackptr /*userspace addr of argv*/,
+			  ROUNDUP(stackptr, 8), entrypoint);
+
+	as_destroy(old_as);
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
 	return EINVAL;
