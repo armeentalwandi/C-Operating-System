@@ -15,6 +15,7 @@
 #include <synch.h>
 #include <vfs.h>
 #include <kern/fcntl.h>
+#include <limits.h>
 
 
   /* this implementation of sys__exit does not do anything with the exit code */
@@ -207,18 +208,32 @@ int sys_fork(pid_t* retval, struct trapframe *tf)
 
 int sys_execv(const char *program, char **args) {
 
-(void)args;
-
- // char length_program[128];
   struct addrspace *as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result;
+  int argc = 0;
 
 	/* Open the file. */
 
- char program_n[128]; 
- result = copyinstr((const_userptr_t) program, program_n, 128, NULL);
+ char* program_n = kmalloc((strlen(program)+ 1) * sizeof(char));
+ result = copyin((const_userptr_t) program, program_n, (strlen(program)+ 1) * sizeof(char));
+
+  // count number of arguments
+   for (int i = 0; args[i] != NULL; i++) {
+    argc++;
+   }
+
+   // copy args into kernel
+   char **args_copy = kmalloc((argc + 1) * sizeof(char *));
+
+
+   for (int i = 0; i < argc; i++) {
+    args_copy[i] = kmalloc((strlen(args[i]) + 1) * sizeof(char));
+    result = copyin((const_userptr_t) args[i], (void *) args_copy[i],(strlen(args[i]) + 1) * sizeof(char));
+   }
+   args_copy[argc] = NULL;
+
 
 	result = vfs_open(program_n, O_RDONLY, 0, &v);
 	if (result) {
@@ -237,7 +252,8 @@ int sys_execv(const char *program, char **args) {
 	}
 
 	/* Switch to it and activate it. */
-	curproc_setas(as);
+	//curproc_setas(as);
+  struct addrspace *old_as = curproc_setas(as);
 	as_activate();
 
 	/* Load the executable. */
@@ -258,10 +274,38 @@ int sys_execv(const char *program, char **args) {
 		return result;
 	}
 
+
+// start hereeee !!
+vaddr_t *addr_ptr = kmalloc((argc+1)*sizeof(vaddr_t));
+
+
+// copy the arguments --  copy out the string, decrement stack pointer, use copyoutstr
+// put userspace address of string in addr_ptr for each of the strings
+for (int i = argc-1; i >= 0; i--) {
+	stackptr-= ROUNDUP(strlen(args_copy[i]) + 1, 4);
+	result = copyoutstr(args_copy[i], (userptr_t)stackptr, ROUNDUP(strlen(args_copy[i]) + 1, 4), NULL);    
+
+	if (result == 0) {
+		addr_ptr[i] = stackptr; 
+	}
+}
+addr_ptr[argc] = (vaddr_t)NULL;
+// pointers to chars
+	for (int i = argc; i >= 0; i--) {
+		stackptr -= sizeof(vaddr_t);
+		result = copyout((const void *)&addr_ptr[i], (userptr_t) stackptr, sizeof(vaddr_t));
+	}
+
+  kfree(program_n);
+  as_destroy(old_as);
+  // prolly need to  free args_copy cuz malloced it
+  // obviosuly don't free addr_ptrs cuz enter_new_process will need to access them
+ 
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
-			  stackptr, entrypoint);
-	
+	enter_new_process(argc /*argc*/, (userptr_t)stackptr/*userspace addr of argv*/,
+			  ROUNDUP(stackptr, 8), entrypoint);
+
+
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
 	return EINVAL;

@@ -128,11 +128,13 @@ addr_ptr[argc] = (vaddr_t)NULL;
 		KASSERT(err == 0);
 	}
  
+ as_destroy(old_as);
+ 
 	/* Warp to user mode. */
 	enter_new_process(argc /*argc*/, (userptr_t)stackptr /*userspace addr of argv*/,
 			  ROUNDUP(stackptr, 8), entrypoint);
 
-	as_destroy(old_as);
+	
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
 	return EINVAL;
